@@ -7,8 +7,7 @@ Small Node.js REST API for tracking IT support tickets in memory.
 npm install
 npm start
 
-The server runs on port `3000` by default. To use a different port:
-
+The server runs on port `3000` by default. 
 
 ### Base URL
 
@@ -26,11 +25,10 @@ The server runs on port `3000` by default. To use a different port:
 
 Create a ticket:
 
-```bash
-curl -X POST http://localhost:3000/api/tickets \
-	-H "Content-Type: application/json" \
-	-d '{"title":"Cannot access company email","description":"Login shows an authentication error.","priority":"high"}'
-```
+POST http://localhost:3000/api/tickets 
+	-"Content-Type: application/json" 
+	-'{"title":"Cannot access company email","description":"Login shows an authentication error.","priority":"high"}'
+
 
 Example success response:
 

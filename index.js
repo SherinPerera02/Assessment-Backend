@@ -3,6 +3,7 @@ const http = require("http");
 // In-memory ticket store for this exercise.
 const tickets = [];
 let nextTicketNumber = 1001;
+const idempotencyKeys = new Map();
 
 // Business rule values used by validation.
 const allowedPriorities = new Set(["low", "medium", "high"]);
@@ -89,6 +90,28 @@ function getTicketById(id) {
   return tickets.find((ticket) => ticket.id === id);
 }
 
+function parsePositiveInteger(value, defaultValue) {
+  if (value === undefined) {
+    return defaultValue;
+  }
+
+  const parsedValue = Number(value);
+
+  if (!Number.isInteger(parsedValue) || parsedValue <= 0) {
+    return null;
+  }
+
+  return parsedValue;
+}
+
+function createPayloadSignature(payload) {
+  return JSON.stringify({
+    title: payload.title.trim(),
+    description: payload.description.trim(),
+    priority: payload.priority,
+  });
+}
+
 // Main HTTP router for the ticket API.
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
@@ -98,12 +121,30 @@ const server = http.createServer(async (req, res) => {
     try {
       const body = parseJsonBody(await readRequestBody(req));
       const errors = validateTicketCreation(body);
+      const idempotencyKey = req.headers["idempotency-key"];
 
       if (errors.length > 0) {
         return sendJson(res, 400, {
           error: "Invalid ticket data",
           details: errors,
         });
+      }
+
+      const payloadSignature = createPayloadSignature(body);
+
+      if (idempotencyKey) {
+        const existingEntry = idempotencyKeys.get(idempotencyKey);
+
+        if (existingEntry) {
+          if (existingEntry.payloadSignature !== payloadSignature) {
+            return sendJson(res, 400, {
+              error:
+                "Idempotency-Key already used with a different request body",
+            });
+          }
+
+          return sendJson(res, 200, existingEntry.ticket);
+        }
       }
 
       const ticket = {
@@ -116,6 +157,14 @@ const server = http.createServer(async (req, res) => {
       };
 
       tickets.push(ticket);
+
+      if (idempotencyKey) {
+        idempotencyKeys.set(idempotencyKey, {
+          payloadSignature,
+          ticket,
+        });
+      }
+
       return sendJson(res, 201, ticket);
     } catch (error) {
       return sendJson(res, 400, { error: error.message });
@@ -125,6 +174,10 @@ const server = http.createServer(async (req, res) => {
   // Return all tickets, optionally filtered by status.
   if (req.method === "GET" && url.pathname === "/api/tickets") {
     const { status } = Object.fromEntries(url.searchParams.entries());
+    const shouldPaginate =
+      url.searchParams.has("page") || url.searchParams.has("limit");
+    const page = parsePositiveInteger(url.searchParams.get("page"), 1);
+    const limit = parsePositiveInteger(url.searchParams.get("limit"), 10);
 
     if (status !== undefined && !allowedStatuses.has(status)) {
       return sendJson(res, 400, {
@@ -132,10 +185,30 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    if (page === null || limit === null) {
+      return sendJson(res, 400, {
+        error: "page and limit must be positive integers",
+      });
+    }
+
     const filteredTickets = status
       ? tickets.filter((ticket) => ticket.status === status)
       : tickets;
-    return sendJson(res, 200, filteredTickets);
+
+    if (!shouldPaginate) {
+      return sendJson(res, 200, filteredTickets);
+    }
+
+    const startIndex = (page - 1) * limit;
+    const pagedTickets = filteredTickets.slice(startIndex, startIndex + limit);
+
+    return sendJson(res, 200, {
+      data: pagedTickets,
+      page,
+      limit,
+      total: filteredTickets.length,
+      totalPages: Math.max(1, Math.ceil(filteredTickets.length / limit)),
+    });
   }
 
   // Match routes for a single ticket and the status update endpoint.

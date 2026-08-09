@@ -58,4 +58,4 @@ Example success response:
 
 ### Production Improvements
 
-For production, this service should use a real database for persistence, add authentication and authorization for IT staff, enable structured logging, add automated tests, apply rate limiting, and deploy behind a managed platform or container service.
+For production, this service should use a real database for persistence add authentication and authorization for IT staff, enable structured logging add automated tests, apply rate limiting and deploy behind a managed platform or container service.
